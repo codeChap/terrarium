@@ -17,15 +17,21 @@ use yii\web\AssetBundle;
  */
 class AppAsset extends AssetBundle
 {
-    public $basePath = '@webroot';
-    public $baseUrl = '@web';
-    public $css = [
-        'css/site.css',
-    ];
-    public $js = [
-    ];
-    public $depends = [
-        'yii\web\YiiAsset',
-        'yii\bootstrap\BootstrapAsset',
-    ];
+	public $basePath = '@webroot';
+	public $baseUrl = '@web';
+	public $css = [
+		'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0/Chart.min.css',
+		'css/semantic.min.css',
+		'css/site.css',
+	];
+	public $js = [
+		'js/jquery.min.js',
+		'js/vue.min.js',
+		'js/semantic.min.js',
+		'https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.8.0/Chart.bundle.min.js',
+		'js/actions.js'
+	];
+	public $depends = [
+		'yii\web\YiiAsset',
+	];
 }
