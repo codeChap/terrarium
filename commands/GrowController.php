@@ -26,7 +26,7 @@ class GrowController extends Controller
 	 * @param string $message the message to be echoed.
 	 * @return int Exit code
 	 */
-	public function actionIndex()
+	public function actionIndex($mode = 'flytrap')
 	{
 		// Get Temperature and Humidity
 		list($t, $h) = explode(',', shell_exec('python /var/develop/ter/getHt.py'));
@@ -34,8 +34,8 @@ class GrowController extends Controller
 		// Min temperature and humidity
 		$t = trim($t);
 		$h = trim($h);
-		$mT = $this->mode[$config['mode']][0];
-		$mH = $this->mode[$config['mode']][1];
+		$mT = Yii::$app->modes[$mode][0];
+		$mH = Yii::$app->modes[$mode][1];
 
 		// Temperature
 		if($t < $mT){
