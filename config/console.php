@@ -1,6 +1,7 @@
 <?php
 
 $params = require __DIR__ . '/params.php';
+$params['modes'] = require __DIR__ . '/modes.php';
 $db = require __DIR__ . '/db.php';
 
 $config = [
@@ -28,6 +29,7 @@ $config = [
         'db' => $db,
     ],
     'params' => $params,
+    'timezone' => 'Africa/Johannesburg'
     /*
     'controllerMap' => [
         'fixture' => [ // Fixture generation command line.

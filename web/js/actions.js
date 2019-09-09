@@ -3,6 +3,12 @@ var app = new Vue({
 	// Element
 	el    : '#app',
 
+	data : {
+		watering   : 0,
+		warming    : 0,
+		kitchening : 0
+	},
+
 	// Ready
 	mounted() {
 		this.init();
@@ -45,6 +51,18 @@ var app = new Vue({
 					}]
 				}
 			});
+		},
+		water : (b) => {
+			$.post('/feed/water', {onOff:b});
+			app.watering = b;
+		},
+		warm : (b) => {
+			$.post('/feed/warm', {onOff:b});
+			app.warming = b;
+		},
+		kitchen : (b) => {
+			$.post('/feed/kitchen', {onOff:b});
+			app.kitchening = b;
 		}
 	}
 })

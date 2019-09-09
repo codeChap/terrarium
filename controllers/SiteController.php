@@ -61,24 +61,32 @@ class SiteController extends Controller
 	 */
 	public function actionIndex()
 	{
-		$newData = [];
 		if(($h = fopen(realpath('../').'/data.csv', 'r')) !== false){
 			while (($data = fgetcsv($h, 1000, ',')) !== false){
+
 				$temps[]    = [(int)$data[1]];
 				$rTemps[]   = [30];
+
 				$humid[]    = [(int)$data[2]];
 				$minHumid[] = [80];
+
 				$times[]    = [date('D H:i', $data[0])];
+
+				$heating[]  = [$data[3]];
+				$watering[] = [$data[4]];
 			}
 			fclose($h);
 		}
 
 		return $this->render('index', [
-			'temps'    => $temps,
-			'rTemps'   => $rTemps,
-			'humid'    => $humid,
-			'minHumid' => $minHumid,
-			'times'    => $times
+			'temps'    => isset($temps)    ? $temps    : 0,
+			'rTemps'   => isset($rTemps)   ? $rTemps   : 0,
+			'humid'    => isset($humid)    ? $humid    : 0,
+			'minHumid' => isset($minHumid) ? $minHumid : 0,
+			'times'    => isset($times)    ? $times    : 0,
+			'heating'  => isset($heating)  ? $heating  : 0,
+			'watering' => isset($watering) ? $watering : 0,
+			'planted'  => 1561228460
 		]);
 	}
 

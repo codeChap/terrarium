@@ -1,0 +1,18 @@
+[Unit]
+Description=PHP Flytrap Service
+#Requires=mysqld.service memcached.service
+#After=mysqld.service memcached.service
+
+[Service]
+User=root
+Type=simple
+TimeoutSec=0
+PIDFile=/var/run/php_flytrap_sync.pid
+ExecStart=/bin/sh -c '/usr/bin/php -f /var/develop/ter/yii grow  2>&1 > /var/log/flytrap.log'
+KillMode=mixed
+
+Restart=on-failure
+RestartSec=15s
+
+[Install]
+WantedBy=default.target

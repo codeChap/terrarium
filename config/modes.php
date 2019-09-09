@@ -1,8 +1,18 @@
 <?php
 
 /**
- * Temp and humidity
+ * Temp and Humidity
  */
+
 return [
-	'flytrap' => [30, 80]
+	'flytrap' => [
+		'temp' => [
+			'min' => 24,
+			'max' => 32
+		],
+		'humi' => [
+			'min' => 80,
+			'max' => 85
+		]
+	]
 ];
