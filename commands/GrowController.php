@@ -33,27 +33,35 @@ class GrowController extends Controller
 		$climate = new \League\CLImate\CLImate;
 		$climate->blue('Flytrap service started');
 
+		// Get moisture requirement
+		$moist = \Yii::$app->params['modes']['flytrap']['moist'];
+		
+		// Main Loop
 		while(true){
 
 			// Do a quick moisture check first
-			if(shell_exec('python /var/develop/ter/getM.py') == 1){
-				sleep(1);
-				if(shell_exec('python /var/develop/ter/getM.py') == 1){
-					sleep(1);
-					if(shell_exec('python /var/develop/ter/getM.py') == 1){
-						$climate->green('Too dry, watering for 30s');
+			$cm = shell_exec('python /var/develop/ter/getM.py');
+			if($cm < $moist){
+				sleep(2);
+				if(shell_exec('python /var/develop/ter/getM.py') < $moist){
+					sleep(2);
+					if(shell_exec('python /var/develop/ter/getM.py') < $moist){
+						//$climate->green('Too dry, watering for 60s');
 						$this->water(true);
 						$this->warm(false);
 						$this->fan(false);
-						sleep(15);
+						sleep(60);
 						continue;
 					}
 				}
 			}
-			
+
 			//$climate->blue('Moisture is good');
 			$this->water(false);
 			$this->fan(true);
+			
+			// 100s
+			$m = round($cm, 4) * 100;
 			
 			// Reset
 			$t = [];
@@ -107,10 +115,10 @@ class GrowController extends Controller
 			if($ta != $this->cT or $ha != $this->cH){
 				
 				// Check and correct according to latest readings
-				$this->checkHt($ta, $ha);
+				$this->checkHt($ta, $ha, $m);
 				
 				// Log the readings only if changed
-				$this->log($ta, $ha);
+				$this->log($ta, $ha, $m);
 			}
 
 			//$climate->inline(PHP_EOL);
@@ -153,17 +161,27 @@ class GrowController extends Controller
 	 * 
 	 * @param string $temperature
 	 * @param string $humidity
+	 * @param string $moisture
 	 * @param string What we are growing
 	 * 
 	 * @return int Exit code
 	 */
-	private function checkHt($t, $h, $mode = 'flytrap')
+	private function checkHt($t, $h, $m, $mode = 'flytrap')
 	{
 		$climate = new \League\CLImate\CLImate;
 
 		// Find ideal Temp based on max and miin values
 		$minT = \Yii::$app->params['modes'][$mode]['temp']['min'];
 		$maxT = \Yii::$app->params['modes'][$mode]['temp']['max'];
+
+		// Drop temperature by 10 during the night
+		$time = date("G");
+		if ($time >= "18" && $time > "7") {
+			$dayNight = 'Night mode';
+			$maxT = $maxT - 10;
+		}else{
+			$dayNight = 'Day mode';
+		}
 		$avT  = ($minT + $maxT) / 2;
 
 		// Find ideal Humidity based on max and miin values
@@ -182,12 +200,12 @@ class GrowController extends Controller
 			case 1 : $warm = false; break;
 		}
 
-		$info = ('Temperature: '. $avr[0] . '% => ' . $t .'/'.$avT . ' | Humidity: '.$avr[1] . '% => ' . $h .'/'.$avH);
+		$info = ('Temperature: '. $avr[0] . '% => ' . $t .'/'.$avT . ' | Humidity: '.$avr[1] . '% => ' . $h .'/'.$avH. ' | Moisture: '.$m);
 
 		if($warm){
-			$climate->green($info . ' (Warming)');
+			$climate->green($info . ' (Warming, '.$dayNight.')');
 		}else{
-			$climate->cyan($info . ' (Cooling)');
+			$climate->cyan($info . ' (Cooling, '.$dayNight.')');
 		}
 
 		// Do it
@@ -200,7 +218,7 @@ class GrowController extends Controller
 	/**	
 	 * Logs the current temp and humidity
 	 */
-	private function log($t, $h)
+	private function log($t, $h, $m)
 	{
 		// Create sqlite table if it does not exist
 		$fileDb = new \PDO('sqlite:hts.sqlite');
@@ -210,6 +228,7 @@ class GrowController extends Controller
 			(
 			`h` CHAR(90) NOT NULL,
 			`t` CHAR(90) NOT NULL,
+			`m` CHAR(90) NOT NULL,
 			`ts` CHAR(100) NOT NULL
 			)'
 		);
@@ -217,26 +236,29 @@ class GrowController extends Controller
 		// Insert Humidity, temperature and timestamp
 		$rows = [
 			[
-				'h'  => $h,
-				't'  => $t,
+				'h' => $h,
+				't' => $t,
+				'm' => $m,
 				'ts' => time()
 			]
 		];
-		$insert = "INSERT INTO ht (h, t, ts) VALUES (:h, :t, :ts)";
+		$insert = "INSERT INTO ht (h, t, m, ts) VALUES (:h, :t, :m, :ts)";
 		$stmt = $fileDb->prepare($insert);
 		$stmt->bindParam(':h',  $h);
 		$stmt->bindParam(':t',  $t);
+		$stmt->bindParam(':m',  $m);
 		$stmt->bindParam(':ts', $ts);
 		foreach ($rows as $r) {
 			$h  = $r['h'];
 			$t  = $r['t'];
+			$m  = $r['m'];
 			$ts = $r['ts'];
 			$stmt->execute();
 		}
 
 		// Keep a text record of the latest values
 		$latest = fopen("/var/develop/ter/web/ht.txt", "w") or die("Unable to open file!");
-		fputcsv($latest, [$t, $h]);
+		fputcsv($latest, [$t, $h, $m]);
 
 		// Done
 		return true;

@@ -39,6 +39,7 @@ class FeedController extends ActiveController
 			$return[] = [
 				$row['h'],
 				$row['t'],
+				$row['m'],
 				date('d M H:i', $row['ts'])
 			];
 		}

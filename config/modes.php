@@ -7,12 +7,13 @@
 return [
 	'flytrap' => [
 		'temp' => [
-			'min' => 24,
-			'max' => 32
+			'min' => 30,
+			'max' => 38
 		],
 		'humi' => [
 			'min' => 80,
 			'max' => 85
-		]
+		],
+		'moist' => 0.13
 	]
 ];
