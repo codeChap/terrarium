@@ -24,67 +24,53 @@ class GrowController extends Controller
 	// Store current humididy and temperature
 	public $cH = 0;
 	public $cT = 0;
+	public $cM = 0;
 
 	/**
 	 * 
 	 */
 	public function actionIndex()
 	{
+		#$this->actionOff();
+		$this->fan(true);
+
+		$count = -1;
+
 		$climate = new \League\CLImate\CLImate;
 		$climate->blue('Flytrap service started');
 
-		// Get moisture requirement
-		$moist = \Yii::$app->params['modes']['flytrap']['moist'];
-		
 		// Main Loop
 		while(true){
 
-			// Do a quick moisture check first
-			$cm = shell_exec('python /var/develop/ter/getM.py');
-			if($cm < $moist){
-				sleep(2);
-				if(shell_exec('python /var/develop/ter/getM.py') < $moist){
-					sleep(2);
-					if(shell_exec('python /var/develop/ter/getM.py') < $moist){
-						//$climate->green('Too dry, watering for 60s');
-						$this->water(true);
-						$this->warm(false);
-						$this->fan(false);
-						sleep(60);
-						continue;
-					}
-				}
-			}
-
-			//$climate->blue('Moisture is good');
-			$this->water(false);
-			$this->fan(true);
-			
-			// 100s
-			$m = round($cm, 4) * 100;
-			
 			// Reset
 			$t = [];
 			$h = [];
+			$m = [];
 			$ta = 0;
 			$ha = 0;
+			$ma = 0;
 			$read = true;
 			$readings = 0;
 
-			// Get initial humidity and temperature
 			while($read){
-				list($readT, $readH) = explode(',', shell_exec('python /var/develop/ter/getHt.py'));
 
+				// Get initial humidity, temperature & moisture
+				list($readT, $readH) = explode(',', shell_exec('python /var/develop/ter/getHt.py'));
+				$readM = shell_exec('python /var/develop/ter/getM.py');
+
+				// Clean and format
 				$cleanT = trim($readT);
 				$cleanH = trim($readH);
+				$cleanM = round(trim($readM),2) * 100;
 
-				// Ignore out of range values
+				// Ignore out of range values for humidity and temperature (Dont know why this happens....?)
 				if($cleanH > 150){sleep(1); continue;}
 				if($cleanT < 15){sleep(1); continue;}
 
 				// Clean
 				$t[] = trim($cleanT);
 				$h[] = trim($cleanH);
+				$m[] = trim($cleanM);
 
 				// Count three readings to get an average before continue
 				if($readings < 3){
@@ -111,14 +97,25 @@ class GrowController extends Controller
 				//$climate->blue('Average humidity is ' . $ha);
 			}
 
-			// If data changes, log it
-			if($ta != $this->cT or $ha != $this->cH){
-				
-				// Check and correct according to latest readings
-				$this->checkHt($ta, $ha, $m);
-				
-				// Log the readings only if changed
-				$this->log($ta, $ha, $m);
+			if(count($m)) {
+				$m = array_filter($m);
+				$ma = array_sum($m)/count($m);
+				//$climate->blue('Average moisture is ' . $ma);
+			}
+
+			// If data changes, checkit
+			if($ta != $this->cT or $ha != $this->cH or $ma != $this->cM){
+				$this->cT = $ta;
+				$this->cH = $ha;
+				$this->cM = $ma;
+				$this->checkHtm($ta, $ha, $ma);
+			}
+
+			$count += 1;
+			$hour = 3*60;
+			if($count == 0 or $count == $hour){
+				$count = 1;
+				$this->log($ta, $ha, $ma);
 			}
 
 			//$climate->inline(PHP_EOL);
@@ -134,6 +131,9 @@ class GrowController extends Controller
 	 */
 	public function actionDrip($seconds = 60)
 	{
+		$climate = new \League\CLImate\CLImate;
+		$climate->green('Dripping for '.$seconds.'...');
+
 		$this->water(true);
 		sleep($seconds);
 		$this->water(false);
@@ -166,11 +166,21 @@ class GrowController extends Controller
 	 * 
 	 * @return int Exit code
 	 */
-	private function checkHt($t, $h, $m, $mode = 'flytrap')
+	private function checkHtm($t, $h, $m, $mode = 'flytrap')
 	{
 		$climate = new \League\CLImate\CLImate;
 
-		// Find ideal Temp based on max and miin values
+		// Get moisture requirement
+		$moist = \Yii::$app->params['modes'][$mode]['moist'];
+		if($m <= $moist){
+			$this->water(true);
+			$this->warm(false);
+			$this->fan(false);
+			sleep(15);
+			return true; // Do another moisture check
+		}
+
+		// Find ideal Temp based on max and min values
 		$minT = \Yii::$app->params['modes'][$mode]['temp']['min'];
 		$maxT = \Yii::$app->params['modes'][$mode]['temp']['max'];
 
@@ -184,7 +194,7 @@ class GrowController extends Controller
 		}
 		$avT  = ($minT + $maxT) / 2;
 
-		// Find ideal Humidity based on max and miin values
+		// Find ideal Humidity based on max and min values
 		$minH = \Yii::$app->params['modes'][$mode]['humi']['min'];
 		$maxH = \Yii::$app->params['modes'][$mode]['humi']['max'];
 		$avH  = ($minH + $maxH) / 2;
@@ -200,7 +210,7 @@ class GrowController extends Controller
 			case 1 : $warm = false; break;
 		}
 
-		$info = ('Temperature: '. $avr[0] . '% => ' . $t .'/'.$avT . ' | Humidity: '.$avr[1] . '% => ' . $h .'/'.$avH. ' | Moisture: '.$m);
+		$info = ('Humidity: '.$avr[1] . '% => ' . $h .'/'.$avH. ' | Temperature: '. $avr[0] . '% => ' . $t .'/'.$avT . ' | Moisture: '.$m);
 
 		if($warm){
 			$climate->green($info . ' (Warming, '.$dayNight.')');
@@ -221,10 +231,10 @@ class GrowController extends Controller
 	private function log($t, $h, $m)
 	{
 		// Create sqlite table if it does not exist
-		$fileDb = new \PDO('sqlite:hts.sqlite');
+		$fileDb = new \PDO('sqlite:/var/develop/ter/htm.sqlite');
 		$fileDb->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
 		$fileDb->exec('
-			CREATE TABLE IF NOT EXISTS ht
+			CREATE TABLE IF NOT EXISTS htm
 			(
 			`h` CHAR(90) NOT NULL,
 			`t` CHAR(90) NOT NULL,
@@ -242,7 +252,7 @@ class GrowController extends Controller
 				'ts' => time()
 			]
 		];
-		$insert = "INSERT INTO ht (h, t, m, ts) VALUES (:h, :t, :m, :ts)";
+		$insert = "INSERT INTO htm (h, t, m, ts) VALUES (:h, :t, :m, :ts)";
 		$stmt = $fileDb->prepare($insert);
 		$stmt->bindParam(':h',  $h);
 		$stmt->bindParam(':t',  $t);

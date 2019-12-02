@@ -19,10 +19,10 @@ def RC_Analog(Pin):
 	return end_time - start_time
 
 	#Main program loop
-while True:
-	time.sleep(1)
-	reading = RC_Analog(4) #store counts in a variable
-	print reading #print counts using GPIO4
-	break
+#while True:
+#	time.sleep(1)
+reading = RC_Analog(4) #store counts in a variable
+print reading #print counts using GPIO4
+#	break
 
 GPIO.cleanup()

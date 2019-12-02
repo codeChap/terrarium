@@ -30,9 +30,9 @@ class FeedController extends ActiveController
 	 */
 	public function actionRead()
 	{
-		$file_db = new \PDO('sqlite:/var/develop/ter/hts.sqlite');
-		$file_db->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-		$result = $file_db->query('SELECT * FROM `ht`');
+		$fileDb = new \PDO('sqlite:/var/develop/ter/htm.sqlite');
+		$fileDb->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
+		$result = $fileDb->query('SELECT * FROM `htm`');
 		$return = [];
 
 		foreach ($result as $row) {

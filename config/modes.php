@@ -14,6 +14,6 @@ return [
 			'min' => 80,
 			'max' => 85
 		],
-		'moist' => 0.13
+		'moist' => 11
 	]
 ];
