@@ -21,18 +21,30 @@ use PhpGpio\Gpio;
  */
 class GrowController extends Controller
 {
-	// Store current humididy and temperature
+	// Store current humididy, temperature, moisture and soil temperature
 	public $cH = 0;
 	public $cT = 0;
 	public $cM = 0;
+	public $cS = 0;
 
 	/**
 	 * 
 	 */
 	public function actionIndex()
 	{
-		#$this->actionOff();
-		$this->fan(true);
+		// On startup turn eveything on and off vagain as a test
+		shell_exec('python /var/develop/ter/relay1On.py');
+		usleep(100);
+		shell_exec('python /var/develop/ter/relay1Off.py');
+		shell_exec('python /var/develop/ter/relay2On.py');
+		usleep(100);
+		shell_exec('python /var/develop/ter/relay2Off.py');
+		shell_exec('python /var/develop/ter/relay3On.py');
+		usleep(100);
+		shell_exec('python /var/develop/ter/relay3Off.py');
+		shell_exec('python /var/develop/ter/relay4On.py');
+		usleep(100);
+		shell_exec('python /var/develop/ter/relay4Off.py');
 
 		$count = -1;
 
@@ -42,13 +54,15 @@ class GrowController extends Controller
 		// Main Loop
 		while(true){
 
-			// Reset
+			// Reset sensor data
 			$t = [];
 			$h = [];
 			$m = [];
+			$s = [];
 			$ta = 0;
 			$ha = 0;
 			$ma = 0;
+			$sa = 0;
 			$read = true;
 			$readings = 0;
 
@@ -57,11 +71,13 @@ class GrowController extends Controller
 				// Get initial humidity, temperature & moisture
 				list($readT, $readH) = explode(',', shell_exec('python /var/develop/ter/getHt.py'));
 				$readM = shell_exec('python /var/develop/ter/getM.py');
+				$readS = shell_exec('python /var/develop/ter/getS.py');
 
 				// Clean and format
 				$cleanT = trim($readT);
 				$cleanH = trim($readH);
 				$cleanM = round(trim($readM),2) * 100;
+				$cleanS = round(trim($readS));
 
 				// Ignore out of range values for humidity and temperature (Dont know why this happens....?)
 				if($cleanH > 150){sleep(1); continue;}
@@ -71,15 +87,15 @@ class GrowController extends Controller
 				$t[] = trim($cleanT);
 				$h[] = trim($cleanH);
 				$m[] = trim($cleanM);
+				$s[] = trim($cleanS);
 
 				// Count three readings to get an average before continue
 				if($readings < 3){
 					//$climate->inline('.');
 					$readings += 1;
-					sleep(2);
+					sleep(1);
 				}
 				else{
-					//$climate->inline(PHP_EOL);
 					$read = false;
 				}
 			}
@@ -103,19 +119,31 @@ class GrowController extends Controller
 				//$climate->blue('Average moisture is ' . $ma);
 			}
 
+			if(count($s)) {
+				$s = array_filter($s);
+				$sa = array_sum($s)/count($s);
+				//$climate->blue('Average soil temperature is ' . $sa);
+			}
+
 			// If data changes, checkit
-			if($ta != $this->cT or $ha != $this->cH or $ma != $this->cM){
+			if(
+				$ta != $this->cT or 
+				$ha != $this->cH or 
+				$ma != $this->cM or 
+				$sa != $this->cS
+			){
 				$this->cT = $ta;
 				$this->cH = $ha;
 				$this->cM = $ma;
-				$this->checkHtm($ta, $ha, $ma);
+				$this->cS = $sa;
+				$this->checkHtms($ta, $ha, $ma, $sa);
 			}
 
 			$count += 1;
 			$hour = 3*60;
 			if($count == 0 or $count == $hour){
 				$count = 1;
-				$this->log($ta, $ha, $ma);
+				$this->log($ta, $ha, $ma, $sa);
 			}
 
 			//$climate->inline(PHP_EOL);
@@ -166,9 +194,15 @@ class GrowController extends Controller
 	 * 
 	 * @return int Exit code
 	 */
-	private function checkHtm($t, $h, $m, $mode = 'flytrap')
+	private function checkHtms($t, $h, $m, $s, $mode = 'flytrap')
 	{
 		$climate = new \League\CLImate\CLImate;
+		$climate->green('Humidity:'.$h);
+		$climate->green('Moisture:'.$m);
+		$climate->green('Air Temp:'.$t);
+		$climate->green('Soil Temp:'.$s);
+		$this->log($t, $h, $m, $s);
+		return true;
 
 		// Get moisture requirement
 		$moist = \Yii::$app->params['modes'][$mode]['moist'];
@@ -220,7 +254,7 @@ class GrowController extends Controller
 
 		// Do it
 		$this->warm($warm);
-		
+
 		// Done
 		return true;
 	}
@@ -228,47 +262,51 @@ class GrowController extends Controller
 	/**	
 	 * Logs the current temp and humidity
 	 */
-	private function log($t, $h, $m)
+	private function log($t, $h, $m, $s)
 	{
 		// Create sqlite table if it does not exist
-		$fileDb = new \PDO('sqlite:/var/develop/ter/htm.sqlite');
+		$fileDb = new \PDO('sqlite:/var/develop/ter/htms.sqlite');
 		$fileDb->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
 		$fileDb->exec('
-			CREATE TABLE IF NOT EXISTS htm
+			CREATE TABLE IF NOT EXISTS htms
 			(
 			`h` CHAR(90) NOT NULL,
 			`t` CHAR(90) NOT NULL,
 			`m` CHAR(90) NOT NULL,
+			`s` CHAR(90) NOT NULL,
 			`ts` CHAR(100) NOT NULL
 			)'
 		);
-		
+
 		// Insert Humidity, temperature and timestamp
 		$rows = [
 			[
 				'h' => $h,
 				't' => $t,
 				'm' => $m,
+				's' => $s,
 				'ts' => time()
 			]
 		];
-		$insert = "INSERT INTO htm (h, t, m, ts) VALUES (:h, :t, :m, :ts)";
+		$insert = "INSERT INTO htms (h, t, m, s, ts) VALUES (:h, :t, :m, :s, :ts)";
 		$stmt = $fileDb->prepare($insert);
 		$stmt->bindParam(':h',  $h);
 		$stmt->bindParam(':t',  $t);
 		$stmt->bindParam(':m',  $m);
+		$stmt->bindParam(':s',  $s);
 		$stmt->bindParam(':ts', $ts);
 		foreach ($rows as $r) {
 			$h  = $r['h'];
 			$t  = $r['t'];
 			$m  = $r['m'];
+			$s  = $r['s'];
 			$ts = $r['ts'];
 			$stmt->execute();
 		}
 
 		// Keep a text record of the latest values
-		$latest = fopen("/var/develop/ter/web/ht.txt", "w") or die("Unable to open file!");
-		fputcsv($latest, [$t, $h, $m]);
+		$latest = fopen("/var/develop/ter/web/htms.txt", "w") or die("Unable to open file!");
+		fputcsv($latest, [$t, $h, $m, $s]);
 
 		// Done
 		return true;
@@ -279,10 +317,10 @@ class GrowController extends Controller
 	 */
 	public function actionTruncate()
 	{
-		$fileDb = new \PDO('sqlite:hts.sqlite');
+		$fileDb = new \PDO('sqlite:/var/develop/ter/htms.sqlite');
 		$fileDb->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-		$fileDb->exec('DELETE FROM ht');
-		
+		$fileDb->exec('DELETE FROM htms');
+
 		// Done
 		return ExitCode::OK;
 	}
