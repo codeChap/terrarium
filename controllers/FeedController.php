@@ -30,9 +30,9 @@ class FeedController extends ActiveController
 	 */
 	public function actionRead()
 	{
-		$fileDb = new \PDO('sqlite:/var/develop/ter/htm.sqlite');
+		$fileDb = new \PDO('sqlite:/var/develop/ter/htms.sqlite');
 		$fileDb->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-		$result = $fileDb->query('SELECT * FROM `htm`');
+		$result = $fileDb->query('SELECT * FROM `htms`');
 		$return = [];
 
 		foreach ($result as $row) {
@@ -40,6 +40,7 @@ class FeedController extends ActiveController
 				$row['h'],
 				$row['t'],
 				$row['m'],
+				$row['s'],
 				date('d M H:i', $row['ts'])
 			];
 		}
@@ -50,56 +51,34 @@ class FeedController extends ActiveController
 	public function actionVent()
 	{
 		if($p = \Yii::$app->request->post()){
-
-			// Keep a text record of the latest values
-			$fp = fopen("/var/develop/ter/web/vent.txt", "w") or die("Unable to open file!");
-
-			// Do it
 			if($p['onOff'] == 1){
-				fwrite($fp, '1');
 				shell_exec('python /var/develop/ter/relay1On.py');
 			}else{
 				shell_exec('python /var/develop/ter/relay1Off.py');
-				fwrite($fp, '0');
 			}
-
-			fclose($fp);
 		}
 	}
 
 	public function actionWarm()
 	{
-		// Keep a text record of the latest values
-		$fp = fopen("/var/develop/ter/web/warm.txt", "w") or die("Unable to open file!");
 
 		if($p = \Yii::$app->request->post()){
 			if($p['onOff'] == 1){
-				fwrite($fp, '1');
 				shell_exec('python /var/develop/ter/relay2On.py');
 			}else{
-				fwrite($fp, '0');
 				shell_exec('python /var/develop/ter/relay2Off.py');
 			}
 		}
-
-		fclose($fp);
 	}
 
 	public function actionWater()
 	{
-		// Keep a text record of the latest values
-		$fp = fopen("/var/develop/ter/web/water.txt", "w") or die("Unable to open file!");
-
 		if($p = \Yii::$app->request->post()){
 			if($p['onOff'] == 1){
-				fwrite($fp, '1');
 				shell_exec('python /var/develop/ter/relay3On.py');
 			}else{
-				fwrite($fp, '0');
 				shell_exec('python /var/develop/ter/relay3Off.py');
 			}
 		}
-
-		fclose($fp);
 	}
 }

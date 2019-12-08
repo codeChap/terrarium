@@ -74,8 +74,8 @@ class GrowController extends Controller
 				$readS = shell_exec('python /var/develop/ter/getS.py');
 
 				// Clean and format
-				$cleanT = trim($readT);
-				$cleanH = trim($readH);
+				$cleanT = round(trim($readT));
+				$cleanH = round(trim($readH));
 				$cleanM = round(trim($readM),2) * 100;
 				$cleanS = round(trim($readS));
 
@@ -306,7 +306,7 @@ class GrowController extends Controller
 
 		// Keep a text record of the latest values
 		$latest = fopen("/var/develop/ter/web/htms.txt", "w") or die("Unable to open file!");
-		fputcsv($latest, [$t, $h, $m, $s]);
+		fputcsv($latest, [$h, $t, $m, $s]);
 
 		// Done
 		return true;
