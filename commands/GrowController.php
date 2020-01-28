@@ -76,7 +76,7 @@ class GrowController extends Controller
 				// Clean and format
 				$cleanT = round(trim($readT));
 				$cleanH = round(trim($readH));
-				$cleanM = round(trim($readM),2) * 100;
+				$cleanM = round(trim($readM),3) * 100;
 				$cleanS = round(trim($readS));
 
 				// Ignore out of range values for humidity and temperature (Dont know why this happens....?)
@@ -100,17 +100,17 @@ class GrowController extends Controller
 				}
 			}
 
+			if(count($h)) {
+				$h = array_filter($h);
+				$ha = array_sum($h)/count($h);
+				//$climate->blue('Average humidity is ' . $ha);
+			}
+
 			// Finished getting readings
 			if(count($t)) {
 				$t = array_filter($t);
 				$ta = array_sum($t)/count($t);
 				//$climate->blue('Average temperature is ' . $ta);
-			}
-
-			if(count($h)) {
-				$h = array_filter($h);
-				$ha = array_sum($h)/count($h);
-				//$climate->blue('Average humidity is ' . $ha);
 			}
 
 			if(count($m)) {
@@ -127,24 +127,26 @@ class GrowController extends Controller
 
 			// If data changes, checkit
 			if(
-				$ta != $this->cT or 
 				$ha != $this->cH or 
+				$ta != $this->cT or 
 				$ma != $this->cM or 
 				$sa != $this->cS
 			){
-				$this->cT = $ta;
 				$this->cH = $ha;
+				$this->cT = $ta;
 				$this->cM = $ma;
 				$this->cS = $sa;
-				$this->checkHtms($ta, $ha, $ma, $sa);
+				$this->checkHtms($ha, $ta, $ma, $sa);
 			}
 
+			/*
 			$count += 1;
 			$hour = 3*60;
 			if($count == 0 or $count == $hour){
 				$count = 1;
-				$this->log($ta, $ha, $ma, $sa);
+				$this->log($ha, $ta, $ma, $sa);
 			}
+			*/
 
 			//$climate->inline(PHP_EOL);
 			sleep(9);
@@ -155,9 +157,9 @@ class GrowController extends Controller
 	}
 
 	/**
-	 * Water for 60 seconds
+	 * Water for x seconds
 	 */
-	public function actionDrip($seconds = 60)
+	public function actionDrip($seconds = 15)
 	{
 		$climate = new \League\CLImate\CLImate;
 		$climate->green('Dripping for '.$seconds.'...');
@@ -194,119 +196,59 @@ class GrowController extends Controller
 	 * 
 	 * @return int Exit code
 	 */
-	private function checkHtms($t, $h, $m, $s, $mode = 'flytrap')
+	private function checkHtms($h, $t, $m, $s, $mode = 'flytrap')
 	{
-		$climate = new \League\CLImate\CLImate;
-		$climate->green('Humidity:'.$h);
-		$climate->green('Moisture:'.$m);
-		$climate->green('Air Temp:'.$t);
-		$climate->green('Soil Temp:'.$s);
-		$this->log($t, $h, $m, $s);
-		return true;
-
-		// Get moisture requirement
-		$moist = \Yii::$app->params['modes'][$mode]['moist'];
-		if($m <= $moist){
-			$this->water(true);
-			$this->warm(false);
-			$this->fan(false);
-			sleep(15);
-			return true; // Do another moisture check
+		// Vars
+		$warm = 0;
+		$fan = 0;
+		
+		// Day vs night mode
+		$night = 0;
+		$time = date("G");
+		if ($time >= "18" && $time < "6") {
+			$night = 1;
 		}
 
 		// Find ideal Temp based on max and min values
 		$minT = \Yii::$app->params['modes'][$mode]['temp']['min'];
 		$maxT = \Yii::$app->params['modes'][$mode]['temp']['max'];
-
-		// Drop temperature by 10 during the night
-		$time = date("G");
-		if ($time >= "18" && $time > "7") {
-			$dayNight = 'Night mode';
-			$maxT = $maxT - 10;
-		}else{
-			$dayNight = 'Day mode';
-		}
 		$avT  = ($minT + $maxT) / 2;
+		$warm = ($t <= $avT) ? 1 : 0;
 
 		// Find ideal Humidity based on max and min values
 		$minH = \Yii::$app->params['modes'][$mode]['humi']['min'];
 		$maxH = \Yii::$app->params['modes'][$mode]['humi']['max'];
 		$avH  = ($minH + $maxH) / 2;
-
-		// Convert to percentages and find worst key
-		$avr = [
-			round(($t / $avT) * 100),
-			round(($h / $avH) * 100)
-		];
-		$key = array_keys($avr,min($avr));
-		switch($key[0]){
-			case 0 : $warm = true; break;
-			case 1 : $warm = false; break;
+		$fan = ($h >= $avH) ? 1 : 0;
+		
+		// Determine settings
+		if($h < $minH){
+			$fan = 0;
+			$warm = 0;
+		}
+		if($h > $maxH){
+			$fan = 0;
+			if($t < $maxT){
+				$warm = 1;
+			}
 		}
 
-		$info = ('Humidity: '.$avr[1] . '% => ' . $h .'/'.$avH. ' | Temperature: '. $avr[0] . '% => ' . $t .'/'.$avT . ' | Moisture: '.$m);
-
-		if($warm){
-			$climate->green($info . ' (Warming, '.$dayNight.')');
-		}else{
-			$climate->cyan($info . ' (Cooling, '.$dayNight.')');
+		// No sun at night
+		if($night){
+			$warm = 0;
+			$fan = ($h >= $avH) ? 1 : 0;
 		}
 
-		// Do it
+		// Action it
 		$this->warm($warm);
+		$this->fan($fan);
 
-		// Done
-		return true;
-	}
+		$this->log($h, $t, $m, $s, $fan, $warm);
 
-	/**	
-	 * Logs the current temp and humidity
-	 */
-	private function log($t, $h, $m, $s)
-	{
-		// Create sqlite table if it does not exist
-		$fileDb = new \PDO('sqlite:/var/develop/ter/htms.sqlite');
-		$fileDb->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-		$fileDb->exec('
-			CREATE TABLE IF NOT EXISTS htms
-			(
-			`h` CHAR(90) NOT NULL,
-			`t` CHAR(90) NOT NULL,
-			`m` CHAR(90) NOT NULL,
-			`s` CHAR(90) NOT NULL,
-			`ts` CHAR(100) NOT NULL
-			)'
-		);
-
-		// Insert Humidity, temperature and timestamp
-		$rows = [
-			[
-				'h' => $h,
-				't' => $t,
-				'm' => $m,
-				's' => $s,
-				'ts' => time()
-			]
-		];
-		$insert = "INSERT INTO htms (h, t, m, s, ts) VALUES (:h, :t, :m, :s, :ts)";
-		$stmt = $fileDb->prepare($insert);
-		$stmt->bindParam(':h',  $h);
-		$stmt->bindParam(':t',  $t);
-		$stmt->bindParam(':m',  $m);
-		$stmt->bindParam(':s',  $s);
-		$stmt->bindParam(':ts', $ts);
-		foreach ($rows as $r) {
-			$h  = $r['h'];
-			$t  = $r['t'];
-			$m  = $r['m'];
-			$s  = $r['s'];
-			$ts = $r['ts'];
-			$stmt->execute();
-		}
-
-		// Keep a text record of the latest values
-		$latest = fopen("/var/develop/ter/web/htms.txt", "w") or die("Unable to open file!");
-		fputcsv($latest, [$h, $t, $m, $s]);
+		// Info it
+		$climate = new \League\CLImate\CLImate;
+		$climate->green('HTMS : ' . $h .'/'. $t .'/'. $m .'/'. $s);
+		$climate->cyan('FW: ' . ($fan    ? 'On' : 'Off') .'/'. ($warm ? 'On' : 'Off'));
 
 		// Done
 		return true;
@@ -317,12 +259,34 @@ class GrowController extends Controller
 	 */
 	public function actionTruncate()
 	{
-		$fileDb = new \PDO('sqlite:/var/develop/ter/htms.sqlite');
-		$fileDb->setAttribute(\PDO::ATTR_ERRMODE, \PDO::ERRMODE_EXCEPTION);
-		$fileDb->exec('DELETE FROM htms');
+		\Yii::$app->db->createCommand()->truncateTable('htms')->execute();
+		return ExitCode::OK;
+	}
+
+	public function actionGetM()
+	{
+		$readM = shell_exec('python /var/develop/ter/getM.py');
+		print round(trim($readM),3) * 100;
+	}
+
+	private function log($h, $t, $m, $s, $f, $w)
+	{
+		// Log readings to database
+		$log = new \app\models\Htms();
+		$log->h = $h;
+		$log->t = $t;
+		$log->m = $m;
+		$log->s = $s;
+		$log->f = $f;
+		$log->w = $w;
+		$log->save();
+
+		// Keep a text record of the latest values
+		$latest = fopen("/var/develop/ter/web/htms.txt", "w") or die("Unable to open file!");
+		fputcsv($latest, [$h, $t, $m, $s]);
 
 		// Done
-		return ExitCode::OK;
+		return true;
 	}
 
 	/**
@@ -332,18 +296,11 @@ class GrowController extends Controller
 	 */
 	private function fan($v)
 	{
-		// Keep a text record of the latest values
-		$fp = fopen("/var/develop/ter/web/vent.txt", "w") or die("Unable to open file!");
-
 		if($v == true){
-			fwrite($fp, '1');
 			shell_exec('python /var/develop/ter/relay1On.py');
 		}else{
-			fwrite($fp, '0');
 			shell_exec('python /var/develop/ter/relay1Off.py');
 		}
-
-		fclose($fp);
 
 		// Done
 		return true;
@@ -356,19 +313,11 @@ class GrowController extends Controller
 	 */
 	private function warm($v)
 	{
-		
-		// Keep a text record of the latest values
-		$fp = fopen("/var/develop/ter/web/warm.txt", "w") or die("Unable to open file!");
-
 		if($v == true){
-			fwrite($fp, '1');
 			shell_exec('python /var/develop/ter/relay2On.py');
 		}else{
-			fwrite($fp, '0');
 			shell_exec('python /var/develop/ter/relay2Off.py');
 		}
-
-		fclose($fp);
 
 		// Done
 		return true;
@@ -381,18 +330,11 @@ class GrowController extends Controller
 	 */
 	private function water($v)
 	{
-		// Keep a text record of the latest values
-		$fp = fopen("/var/develop/ter/web/water.txt", "w") or die("Unable to open file!");
-
 		if($v == true){
-			fwrite($fp, '1');
 			shell_exec('python /var/develop/ter/relay3On.py');
 		}else{
-			fwrite($fp, '0');
 			shell_exec('python /var/develop/ter/relay3Off.py');
 		}
-
-		fclose($fp);
 
 		// Done
 		return true;
