@@ -186,6 +186,26 @@ class GrowController extends Controller
 		return true;
 	}
 
+	// Day vs night mode
+	function actionTest(){
+		foreach([
+			0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23
+		] as $hour){
+
+			$now     = $hour;
+			$sunUp   = 7;
+			$sunDown = 18;
+
+			if ($now >= $sunUp xor $now <= $sunDown){
+				$night = 1;
+			}else{
+				$night = 0;
+			}
+
+			print $hour . ': ' . ($night == 1 ? 'Night' : 'Day') . PHP_EOL;
+		}
+	}
+
 	/**
 	 * Logic responsible for growing plants based on temp and humidity
 	 * 
@@ -200,13 +220,15 @@ class GrowController extends Controller
 	{
 		// Vars
 		$warm = 0;
-		$fan = 0;
+		$fan  = 0;
+		$drip = 0;
 		
 		// Day vs night mode
-		$night = 0;
-		$time = date("G");
-		if ($time >= "18" && $time < "6") {
+		$hour = Date("G");
+		if ($hour >= $sunUp xor $hour <= $sunDown){
 			$night = 1;
+		}else{
+			$night = 0;
 		}
 
 		// Find ideal Temp based on max and min values
@@ -220,30 +242,58 @@ class GrowController extends Controller
 		$maxH = \Yii::$app->params['modes'][$mode]['humi']['max'];
 		$avH  = ($minH + $maxH) / 2;
 		$fan = ($h >= $avH) ? 1 : 0;
-		
-		// Determine settings
-		if($h < $minH){
-			$fan = 0;
-			$warm = 0;
-		}
-		if($h > $maxH){
-			$fan = 0;
-			if($t < $maxT){
-				$warm = 1;
+
+		// Find ideal Moisture based on max and min values
+		$minM = \Yii::$app->params['modes'][$mode]['moist']['min'];
+		$maxM = \Yii::$app->params['modes'][$mode]['moist']['max'];
+		$avM  = ($minM + $maxM) / 2;
+		if($avM <= $minM){
+			if( ! $night){
+				$drip = 1;
 			}
 		}
 
-		// No sun at night
-		if($night){
+		// Determine action
+		if($drip == 0){
+
+			// Increase humidity
+			if($h < $minH){
+				$fan  = 0;
+				$warm = 0;
+			}
+
+			// Drop humidity
+			if($h > $maxH){
+				$fan = 0;
+				if($t < $maxT){
+					$warm = 1;
+				}
+			}
+
+			// No sun at night, but keep humidity lower
+			if($night){
+				$warm = 0;
+				$fan = ($h >= $avH) ? 1 : 0;
+			}
+		}
+		// Turn off eveything and water
+		else{
+			$fan  = 0;
 			$warm = 0;
-			$fan = ($h >= $avH) ? 1 : 0;
 		}
 
-		// Action it
-		$this->warm($warm);
-		$this->fan($fan);
+		// Log it
+		$this->log($h, $t, $m, $s, $fan, $warm, $drip);
 
-		$this->log($h, $t, $m, $s, $fan, $warm);
+		// Action it
+		$this->fan($fan);
+		$this->warm($warm);
+		$this->drip($drip);
+
+		// Allow water to seep in a little before meature again
+		if($drip){
+			sleep(60);
+		}
 
 		// Info it
 		$climate = new \League\CLImate\CLImate;
@@ -269,7 +319,7 @@ class GrowController extends Controller
 		print round(trim($readM),3) * 100;
 	}
 
-	private function log($h, $t, $m, $s, $f, $w)
+	private function log($h, $t, $m, $s, $f, $w, $d)
 	{
 		// Log readings to database
 		$log = new \app\models\Htms();
@@ -277,13 +327,14 @@ class GrowController extends Controller
 		$log->t = $t;
 		$log->m = $m;
 		$log->s = $s;
+		$log->d = $d;
 		$log->f = $f;
 		$log->w = $w;
 		$log->save();
 
 		// Keep a text record of the latest values
 		$latest = fopen("/var/develop/ter/web/htms.txt", "w") or die("Unable to open file!");
-		fputcsv($latest, [$h, $t, $m, $s]);
+		fputcsv($latest, [$h, $t, $m, $s, $d]);
 
 		// Done
 		return true;
@@ -328,7 +379,7 @@ class GrowController extends Controller
 	 * 
 	 * Boolean True or false
 	 */
-	private function water($v)
+	private function drip($v)
 	{
 		if($v == true){
 			shell_exec('python /var/develop/ter/relay3On.py');
