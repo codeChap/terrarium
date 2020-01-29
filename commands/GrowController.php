@@ -33,6 +33,7 @@ class GrowController extends Controller
 	public function actionIndex()
 	{
 		// On startup turn eveything on and off vagain as a test
+		/*
 		shell_exec('python /var/develop/ter/relay1On.py');
 		usleep(100);
 		shell_exec('python /var/develop/ter/relay1Off.py');
@@ -45,6 +46,7 @@ class GrowController extends Controller
 		shell_exec('python /var/develop/ter/relay4On.py');
 		usleep(100);
 		shell_exec('python /var/develop/ter/relay4Off.py');
+		*/
 
 		$count = -1;
 
@@ -224,7 +226,9 @@ class GrowController extends Controller
 		$drip = 0;
 		
 		// Day vs night mode
-		$hour = Date("G");
+		$hour    = Date("G");
+		$sunUp   = 7;
+		$sunDown = 18;
 		if ($hour >= $sunUp xor $hour <= $sunDown){
 			$night = 1;
 		}else{
